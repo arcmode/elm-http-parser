@@ -24,13 +24,14 @@ Represent a parsed request with a parameterized body type
 # Parsing messages
 
     request : String -> Result Error (Request String)
-    Parse a request message into a request representation
+
+Parse a request message into a request representation
 
 # Parsing JSON
 
     json : Decoder a -> Request String -> Result Error (Request a)
     
-Decode the body of some previously parsed request expecting a json string and a Content-Type header with value "application/json"
+Decode the body of some previously parsed request expecting a json string and a `Content-Type` header with value `application/json`
 
 # Common helpers
     
