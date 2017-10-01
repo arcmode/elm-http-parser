@@ -1,9 +1,39 @@
-module Http.Parser exposing (request, andThen, json, Error(..))
+module Http.Parser exposing (request, andThen, json, Request, Error(..))
 
-{-| This library provides a middleware abstraction that can be used to
-run tasks in a pre-defined sequence.
+{-| This library provides methods to parse HTTP/1.1 requests string.
 
-@docs request, Error
+    -- Example usage parsing a json request
+    let
+        decoder =
+            Decode.succeed ReqBody
+                |: field "state" Decode.string
+    in
+        request message |> andThen (json decoder)
+
+
+# Definition
+
+@docs Request
+
+
+# Parsing messages
+
+@docs request
+
+
+# Parsing JSON
+
+@docs json
+
+
+# Common helpers
+
+@docs andThen
+
+
+# Parser errors
+
+@docs Error
 
 -}
 
@@ -11,6 +41,7 @@ import Json.Decode as Decode
 import Parser
     exposing
         ( Parser
+        , Count(..)
         , (|.)
         , (|=)
         , succeed
@@ -25,16 +56,9 @@ import Parser
         , andThen
         , fail
         , end
+        , delayedCommit
         )
 import Dict exposing (Dict)
-
-
-exactly =
-    Parser.Exactly
-
-
-atLeast =
-    Parser.AtLeast
 
 
 type alias Method =
@@ -55,6 +79,8 @@ type alias PartialRequest1 =
     }
 
 
+{-| Represent a parsed request with a parameterized body type
+-}
 type alias Request body =
     { method : String
     , uri : String
@@ -64,7 +90,7 @@ type alias Request body =
 
 
 oneSpace =
-    ignore (Parser.Exactly 1) (\c -> c == ' ')
+    ignore (Exactly 1) (\c -> c == ' ')
 
 
 
@@ -98,7 +124,7 @@ isNotWhitespace c =
 
 uri =
     source <|
-        ignore (atLeast 1) isNotWhitespace
+        ignore (AtLeast 1) isNotWhitespace
 
 
 version =
@@ -111,7 +137,7 @@ isHeaderNameChar c =
 
 headerName =
     source <|
-        ignore (atLeast 1) isHeaderNameChar
+        ignore (AtLeast 1) isHeaderNameChar
 
 
 isHeaderValueChar c =
@@ -120,7 +146,7 @@ isHeaderValueChar c =
 
 headerValue =
     source <|
-        ignore (atLeast 1) isHeaderValueChar
+        ignore (AtLeast 1) isHeaderValueChar
 
 
 colon =
@@ -152,7 +178,10 @@ headersHelp revHeaders =
 
 
 headers =
-    Parser.andThen (\( k, v ) -> headersHelp <| Dict.singleton k v) header
+    oneOf
+        [ Parser.andThen (\( k, v ) -> headersHelp <| Dict.singleton k v) header
+        , succeed Dict.empty
+        ]
 
 
 requestLine =
@@ -169,15 +198,25 @@ partial1 =
     succeed PartialRequest1
         |= requestLine
         |= headers
-        |. newline
+
+
+entityBody length =
+    case length of
+        0 ->
+            succeed ""
+
+        n ->
+            delayedCommit newline <|
+                succeed identity
+                    |= keep (Exactly n) (always True)
 
 
 parseMessageBody partial1 =
     let
         contentLength =
             Dict.get "Content-Length" partial1.headers
-                |> Result.fromMaybe "MissingContentLengthHeader"
-                |> Result.andThen String.toInt
+                |> Maybe.map String.toInt
+                |> Maybe.withDefault (Ok 0)
     in
         case contentLength of
             Ok length ->
@@ -189,7 +228,7 @@ parseMessageBody partial1 =
                         |= succeed method
                         |= succeed uri
                         |= succeed partial1.headers
-                        |= keep (exactly length) (always True)
+                        |= entityBody length
                         |. end
 
             Err err ->
@@ -201,14 +240,14 @@ requestParser =
     Parser.andThen parseMessageBody partial1
 
 
-{-| Docs
+{-| Represent an unexpected error while trying to parse or decode some part of the message
 -}
 type Error
     = ParserError Parser.Error
     | DecoderError String
 
 
-{-| Docs
+{-| Parse a request message into a request representation
 -}
 request : String -> Result Error (Request String)
 request string =
@@ -220,6 +259,8 @@ addBody req body =
     { req | body = body }
 
 
+{-| Decode the body of some previously parsed request expecting a json string and a Content-Type header with value "application/json"
+-}
 json : Decode.Decoder a -> Request String -> Result Error (Request a)
 json bodyDecoder req =
     let
@@ -243,6 +284,8 @@ json bodyDecoder req =
                 Err <| DecoderError "MissingContentTypeHeader"
 
 
+{-| Chain a request parser to some body decoder
+-}
 andThen : (Request String -> Result Error (Request a)) -> Result Error (Request String) -> Result Error (Request a)
 andThen =
     Result.andThen
