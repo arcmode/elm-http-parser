@@ -1,5 +1,9 @@
 # Http.Parser
 
+TODO:
+
+- [ ] RFC2616
+
 This library provides methods to parse HTTP/1.1 requests string.
 
     -- Example usage parsing a json request
