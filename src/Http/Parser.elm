@@ -37,9 +37,20 @@ atLeast =
     Parser.AtLeast
 
 
+type alias Method =
+    String
+
+
+type alias RequestUri =
+    String
+
+
+type alias HttpVersion =
+    String
+
+
 type alias PartialRequest1 =
-    { method : String
-    , uri : String
+    { requestLine : ( Method, RequestUri, HttpVersion )
     , headers : Dict String String
     }
 
@@ -88,6 +99,10 @@ isNotWhitespace c =
 uri =
     source <|
         ignore (atLeast 1) isNotWhitespace
+
+
+version =
+    source <| oneOf [ keyword "HTTP/1.1" ]
 
 
 isHeaderNameChar c =
@@ -140,12 +155,19 @@ headers =
     Parser.andThen (\( k, v ) -> headersHelp <| Dict.singleton k v) header
 
 
-partial1 =
-    succeed PartialRequest1
+requestLine =
+    succeed (,,)
         |= method
         |. oneSpace
         |= uri
-        |. ignoreUntil "\n"
+        |. oneSpace
+        |= version
+        |. newline
+
+
+partial1 =
+    succeed PartialRequest1
+        |= requestLine
         |= headers
         |. newline
 
@@ -159,12 +181,16 @@ parseMessageBody partial1 =
     in
         case contentLength of
             Ok length ->
-                succeed Request
-                    |= succeed partial1.method
-                    |= succeed partial1.uri
-                    |= succeed partial1.headers
-                    |= keep (exactly length) (always True)
-                    |. end
+                let
+                    ( method, uri, version ) =
+                        partial1.requestLine
+                in
+                    succeed Request
+                        |= succeed method
+                        |= succeed uri
+                        |= succeed partial1.headers
+                        |= keep (exactly length) (always True)
+                        |. end
 
             Err err ->
                 fail err
