@@ -1,14 +1,22 @@
-module Http.Parser exposing (request, andThen, json, Request, Error(..))
+module Http.Parser
+    exposing
+        ( request
+        , expect
+        , json
+        , mapResult
+        , Request
+        , Error(..)
+        )
 
 {-| This library provides methods to parse HTTP/1.1 requests string.
 
     -- Example usage parsing a json request
     let
-        decoder =
+        body =
             Decode.succeed ReqBody
-                |: field "state" Decode.string
+                |: field "hello" Decode.string
     in
-        request message |> andThen (json decoder)
+        request "POST /hello HTTP/1.1\r\n(...)" |> expect (json body)
 
 
 # Definition
@@ -28,7 +36,9 @@ module Http.Parser exposing (request, andThen, json, Request, Error(..))
 
 # Common helpers
 
-@docs andThen
+@docs expect
+
+@docs mapResult
 
 
 # Parser errors
@@ -286,6 +296,13 @@ json bodyDecoder req =
 
 {-| Chain a request parser to some body decoder
 -}
-andThen : (Request String -> Result Error (Request a)) -> Result Error (Request String) -> Result Error (Request a)
-andThen =
+expect : (Request String -> Result Error (Request a)) -> Result Error (Request String) -> Result Error (Request a)
+expect =
     Result.andThen
+
+
+{-| Map a result error and ok cases in a single expression
+-}
+mapResult : (x -> y) -> (a -> b) -> Result x a -> Result y b
+mapResult err ok =
+    Result.mapError err >> Result.map ok
