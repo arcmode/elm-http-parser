@@ -1,5 +1,5 @@
 {
-    "version": "1.0.0",
+    "version": "2.0.0",
     "summary": "This library provides methods to parse HTTP/1.1 requests string",
     "repository": "https://github.com/drojas/elm-http-parser.git",
     "license": "BSD3",
